@@ -38,11 +38,10 @@ var clientID = 0;
 //
 
 var mediaConstraints = {
-  audio: true,            // We want an audio track
   video: {
-    aspectRatio: {
-      ideal: 1.333333     // 3:2 aspect is preferred
-    }
+    width: {max: 1280},
+    height: {max: 720},
+    frameRate: {ideal: 15}
   }
 };
 
@@ -514,7 +513,7 @@ async function invite(evt) {
     // "preview" box (id "local_video").
 
     try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      webcamStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
       document.getElementById("local_video").srcObject = webcamStream;
     } catch (err) {
       handleGetUserMediaError(err);
@@ -570,7 +569,7 @@ async function handleJoinedMsg(msg) {
 
   if (!webcamStream) {
     try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      webcamStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
     } catch (err) {
       handleGetUserMediaError(err);
       return;
@@ -642,7 +641,7 @@ async function handleVideoOfferMsg(msg) {
 
   if (!webcamStream) {
     try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      webcamStream = await navigator.mediaDevices.getDisplayMedia(mediaConstraints);
     } catch (err) {
       handleGetUserMediaError(err);
       return;

@@ -106,7 +106,7 @@ function connect() {
     scheme += "s";
   }
   serverUrl = scheme + "://" + myHostname + ":6503";
-
+  // 连接信令服务器
   log(`Connecting to server: ${serverUrl}`);
   connection = new WebSocket(serverUrl, "json");
 
@@ -152,8 +152,6 @@ function connect() {
         handleUserlistMsg(msg);
         break;
 
-      case "joined":
-        handleJoinedMsg(msg);
       // Signaling messages: these messages are used to trade WebRTC
       // signaling information during negotiations leading up to a video
       // call.
@@ -245,6 +243,47 @@ async function createPeerConnection() {
   myPeerConnection.onsignalingstatechange = handleSignalingStateChangeEvent;
   myPeerConnection.onnegotiationneeded = handleNegotiationNeededEvent;
   myPeerConnection.ontrack = handleTrackEvent;
+  // 向信令服务器发送进入
+  log("myPeerConnection 创建成功:", myPeerConnection.iceConnectionState);
+  joined();
+
+}
+
+async function joined() {
+  log("send joined...");
+
+  try {
+    log("---> Creating offer");
+    const offer = await myPeerConnection.createOffer();
+
+    // If the connection hasn't yet achieved the "stable" state,
+    // return to the caller. Another negotiationneeded event
+    // will be fired when the state stabilizes.
+
+    if (myPeerConnection.signalingState != "stable") {
+      log("     -- The connection isn't stable yet; postponing...")
+      return;
+    }
+
+    // Establish the offer as the local peer's current
+    // description.
+
+    log("---> Setting local description to the offer");
+    await myPeerConnection.setLocalDescription(offer);
+
+    // Send the offer to the remote peer.
+
+    log("---> Sending the offer to the remote peer");
+    sendToServer({
+      name: myUsername,
+      target: targetUsername,
+      type: "joined",
+      sdp: myPeerConnection.localDescription
+    });
+  } catch (err) {
+    log("*** The following error occurred while handling the negotiationneeded event:");
+    reportError(err);
+  };
 }
 
 // Called by the WebRTC layer to let us know when it's time to
@@ -403,7 +442,7 @@ function handleUserlistMsg(msg) {
 // failure is detected.
 
 function closeVideoCall() {
-  var localVideo = document.getElementById("local_video");
+  // var localVideo = document.getElementById("local_video");
 
   log("Closing the call");
 
@@ -432,12 +471,12 @@ function closeVideoCall() {
     // element, then stopping each of the getUserMedia() tracks
     // on it.
 
-    if (localVideo.srcObject) {
-      localVideo.pause();
-      localVideo.srcObject.getTracks().forEach(track => {
-        track.stop();
-      });
-    }
+    // if (localVideo.srcObject) {
+    //   localVideo.pause();
+    //   localVideo.srcObject.getTracks().forEach(track => {
+    //     track.stop();
+    //   });
+    // }
 
     // Close the peer connection
 
@@ -513,92 +552,22 @@ async function invite(evt) {
     // Get access to the webcam stream and attach it to the
     // "preview" box (id "local_video").
 
-    try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      document.getElementById("local_video").srcObject = webcamStream;
-    } catch (err) {
-      handleGetUserMediaError(err);
-      return;
-    }
+    // try {
+    //   webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    //   document.getElementById("local_video").srcObject = webcamStream;
+    // } catch (err) {
+    //   handleGetUserMediaError(err);
+    //   return;
+    // }
 
-    // Add the tracks from the stream to the RTCPeerConnection
-
-    try {
-      webcamStream.getTracks().forEach(
-        transceiver = track => myPeerConnection.addTransceiver(track, { streams: [webcamStream] })
-      );
-    } catch (err) {
-      handleGetUserMediaError(err);
-    }
-  }
-}
-
-async function handleJoinedMsg(msg) {
-  targetUsername = msg.name;
-
-  // If we're not already connected, create an RTCPeerConnection
-  // to be linked to the caller.
-
-  log("Received video chat offer from " + targetUsername);
-  if (!myPeerConnection) {
-    createPeerConnection();
-  }
-
-  // We need to set the remote description to the received SDP offer
-  // so that our local WebRTC layer knows how to talk to the caller.
-
-  var desc = new RTCSessionDescription(msg.sdp);
-
-  // If the connection isn't stable yet, wait for it...
-
-  if (myPeerConnection.signalingState != "stable") {
-    log("  - But the signaling state isn't stable, so triggering rollback");
-
-    // Set the local and remove descriptions for rollback; don't proceed
-    // until both return.
-    await Promise.all([
-      myPeerConnection.setLocalDescription({ type: "rollback" }),
-      myPeerConnection.setRemoteDescription(desc)
-    ]);
-    return;
-  } else {
-    log("  - Setting remote description");
-    await myPeerConnection.setRemoteDescription(desc);
-  }
-
-  // Get the webcam stream if we don't already have it
-
-  if (!webcamStream) {
-    try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    } catch (err) {
-      handleGetUserMediaError(err);
-      return;
-    }
-
-    document.getElementById("local_video").srcObject = webcamStream;
-
-    // Add the camera stream to the RTCPeerConnection
+    // // Add the tracks from the stream to the RTCPeerConnection
 
     try {
-      webcamStream.getTracks().forEach(
-        transceiver = track => myPeerConnection.addTransceiver(track, { streams: [webcamStream] })
-      );
+      transceiver = track => myPeerConnection.addTransceiver(track, { streams: [] })
     } catch (err) {
       handleGetUserMediaError(err);
     }
   }
-
-  log("---> Creating and sending answer to caller");
-
-  await myPeerConnection.setLocalDescription(await myPeerConnection.createAnswer());
-
-  sendToServer({
-    name: myUsername,
-    target: targetUsername,
-    type: "video-answer",
-    sdp: myPeerConnection.localDescription
-  });
 }
 
 // Accept an offer to video chat. We configure our local settings,
@@ -640,25 +609,22 @@ async function handleVideoOfferMsg(msg) {
 
   // Get the webcam stream if we don't already have it
 
-  if (!webcamStream) {
-    try {
-      webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    } catch (err) {
-      handleGetUserMediaError(err);
-      return;
-    }
+  // if (!webcamStream) {
+  //   try {
+  //     webcamStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+  //   } catch (err) {
+  //     handleGetUserMediaError(err);
+  //     return;
+  //   }
 
-    document.getElementById("local_video").srcObject = webcamStream;
+  //   document.getElementById("local_video").srcObject = webcamStream;
 
-    // Add the camera stream to the RTCPeerConnection
+  //   // Add the camera stream to the RTCPeerConnection
 
-    try {
-      webcamStream.getTracks().forEach(
-        transceiver = track => myPeerConnection.addTransceiver(track, { streams: [webcamStream] })
-      );
-    } catch (err) {
-      handleGetUserMediaError(err);
-    }
+  try {
+    transceiver = track => myPeerConnection.addTransceiver(track, { streams: [] })
+  } catch (err) {
+    handleGetUserMediaError(err);
   }
 
   log("---> Creating and sending answer to caller");
